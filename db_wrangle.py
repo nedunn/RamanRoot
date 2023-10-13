@@ -59,7 +59,8 @@ class Table_Manager(DB_Manager):
 
     def col_list(self):
         stmt = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s;"
-        return self.exe_query(stmt, (self.table,))
+        res=self.exe_query(stmt, (self.table,))
+        return [tup[0] for tup in res]
     
     def add_row(self, data_dict):
         try:
