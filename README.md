@@ -31,3 +31,6 @@ table_manager = Table_Manager(table_name='your_table', dbname='your_database', u
 - `add_row(data_dict)` - Adds a new row to the table using a dictionary of column-value pairs.
 - `remove_row(condition_column, condition_value)` - Removes row(s) from the table based on a specified condtion. Confirmational prompt is required.
 - `grab_data(columns=None)` - Retrieves data from the table. Specific columns can be given as a list.
+
+## Dependencies 
+- `psycopg2`: PostgreSQL adapter for Python
