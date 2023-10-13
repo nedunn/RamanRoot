@@ -1,7 +1,7 @@
 import psycopg2
 
 class DB_Manager:
-    def __init__(self, password, dbname, user='postgres', host='localhost', port='5432' ):
+    def __init__(self, password, dbname, user='postgres', host='localhost', port='5432'):
         
         self.db_params={
             'host':host,
@@ -42,10 +42,10 @@ class DB_Manager:
     
     def table_stats(self, table_name):
         columns_query = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s;"
-        columns = [column[0] for column in self.execute_query(columns_query, (table_name,))]
+        columns = [column[0] for column in self.exe_query(columns_query, (table_name,))]
 
         rows_query = f"SELECT COUNT(*) FROM {table_name};"
-        num_rows = self.execute_query(rows_query)[0][0]
+        num_rows = self.exe_query(rows_query)[0][0]
 
         stats = {'columns': columns, 'num_rows': num_rows, 'column_stats': {}}
 
@@ -54,7 +54,7 @@ class DB_Manager:
 
 class Table_Manager(DB_Manager):
     def __init__(self, table_name, password, dbname, user='postgres', host='localhost', port='5432'):
-        super().__init__(dbname, user, password, host, port)
+        super().__init__(password, dbname, user, host, port)
         self.table=table_name
 
     def col_list(self):
