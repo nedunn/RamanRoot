@@ -7,7 +7,7 @@ Sharma Lab Python code for Raman spectra management, processing, visualization, 
 ----
 
 # DB_Wrangler Module
-Provides a simple interface for managing **PostgreSQL** databases using the psycopg2 library. It currently includes two classes: `DB_Manager` and `Table_Manager`.
+Provides a simple interface for managing **PostgreSQL** databases using the `psycopg2` library. It currently includes two classes: `DB_Manager` and `Table_Manager`.
 
 ## `DB_Manager` Class
 ### Initialization
