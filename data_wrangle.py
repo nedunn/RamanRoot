@@ -39,7 +39,9 @@ class Data_DF:
         sub_dataframe = self.df[self.df[self.col_name].isin(selected_indices)]
         return sub_dataframe
 
-def ex():
+if __name__ == '__main__':
+    #Example usage when running the module directly
+    
     # Create a DataFrame
     data = {'index': [1, 2, 3, 4, 5],
             'value': ['a', 'b', 'c', 'd', 'e']}
