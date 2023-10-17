@@ -1,9 +1,12 @@
 import pandas as pd
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from typing import Dict, List, Union
-
+import plotly.express as px
+from preprocess import PreproSpectra
 
 class Data_DF:
-    def __init__(self, dataframe, name_dict):
+    def __init__(self, dataframe, name_dict, group_dict=None, color_dict=None, apply_prepro=True):
         """
         Initialize the DataFrameSelector.
 
@@ -14,9 +17,24 @@ class Data_DF:
             A dictionary where keys are index values, and values are the row names.
    
         """
-        self.df = dataframe
         self.name_dict = name_dict
 
+        if apply_prepro:
+            self.df = self.preprocess_data(dataframe)
+        else:
+            self.df = dataframe
+
+        if group_dict:
+            self.group_dict=group_dict
+        else:
+            print('No group dictionary provided, creating one based on the name_dict.')
+            self.group_dict=self.make_group_dict()
+        
+        if color_dict:
+            self.color_dict=color_dict
+        else:
+            self.color_dict=self.assign_colors()
+            print('No color dictionary provided, default color values will be used.')
    
     def get_subdf(self, select_vals):
         """
@@ -31,13 +49,12 @@ class Data_DF:
             The sub-DataFrame containing selected rows.
         """
         selected_indices = [key for key, value in self.name_dict.items() if value in select_vals]
-        print (selected_indices)
 
         if not selected_indices:
             print("No indices found with given values.")
             return pd.DataFrame()
 
-        sub_dataframe = self.df[self.df.index.isin(selected_indices)]
+        sub_dataframe = self.df[self.df.index.isin(selected_indices)] #could use .contains instead of .isin
         return sub_dataframe
     
     def get_name_counts(self, get_counts=False):
@@ -63,6 +80,80 @@ class Data_DF:
         else:
             return list(value_counts.keys())
     
+    def make_group_dict(self): #Invert dict function from DataBase/utils.py
+        if self.name_dict is None:
+            print('No name dictionary provided.')
+            return None
+        unique_values=set(self.name_dict.values())
+        group_dict={value: [key for key, val in self.name_dict.items() if val == value] for value in unique_values}
+        self.group_dict=group_dict
+        return group_dict
+
+    def assign_colors(self):
+        color_list=px.colors.qualitative.Vivid[:len(self.group_dict)] # get a list of colors
+        color_dict={key:color_list[i] for i, key in enumerate(self.group_dict.keys())}
+        self.color_dict=color_dict
+        return color_dict
+
+    def preprocess_data(self, df):
+        """
+        Apply 'PreproSpectra(row_as_array).get()' for each row of the DataFrame.
+
+        Returns:
+        - pd.DataFrame
+            The DataFrame with preprocessed data.
+        """
+        # Initialize new dataframe
+        prepro_df=pd.DataFrame(index=df.index, columns=df.columns)
+
+        # Apply Preprocessing
+        for index, row in df.iterrows():
+            prepro_df.loc[index]=PreproSpectra(row.values).get()
+        return prepro_df
+
+    def figure_format(self, input_fig):
+        fig = go.Figure(input_fig)
+        
+        # Add axis labels
+        fig.add_annotation(text='Intensity',
+                           x=-0.1,y=0.5, xref='paper',yref='paper',
+                           showarrow=False,font=dict(size=20, family='Arial'), textangle=-90)
+        fig.add_annotation(text='Raman Shift (cm<sup>-1</sup>)',
+                           x=0.5,y=-0.2, xref='paper',yref='paper',
+                           showarrow=False,font=dict(size=20, family='Arial'))
+        
+        # Final formatting
+        fig.update_layout(template='simple_white', font=dict(family='Arial', size=20), 
+                          margin = dict(l=80, r=50, b=80, t=50)) #Set margins for consistency during export
+        fig.show()
+
+    def subplot_fig(self, group_order=None):
+        # Check for required parameters
+        if group_order is None:
+            group_order=list(self.group_dict.keys())
+
+        # Create Subplots
+        fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
+        
+        # Create a subplot for each group
+        i=1
+        for group in group_order:
+            if group in self.group_dict:
+                indices=self.group_dict[group]
+                # Make a subdf that contains the rows from the `indices` list
+                sub=self.df.loc[self.df.index.isin(indices)]
+                # Add traces to subplot
+                for index, row in sub.iterrows():
+                    fig.add_trace(go.Scatter(x=self.df.columns, y=row, name=index, line=dict(color=self.color_dict[group]), showlegend=False), row=i, col=1)
+                i=i+1
+
+        # Format final figure
+        return self.figure_format(fig)
+
+        #Add annotation
+        #Optional subplot titles
+        #Add title
+        # what happens if there are more groups that colors in color_list?
     
 if __name__ == '__main__':
     #Example usage when running the module directly
