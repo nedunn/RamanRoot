@@ -53,9 +53,13 @@ class DB_Manager:
         pass
 
 class Table_Manager(DB_Manager):
-    def __init__(self, table_name, password, dbname, user='postgres', host='localhost', port='5432'):
+    def __init__(self, table_name, password, dbname, 
+                 user='postgres', host='localhost', port='5432',
+                 condition=None):
         super().__init__(password, dbname, user, host, port)
         self.table=table_name
+
+        self.condition=condition
 
     def col_list(self):
         stmt = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s;"
@@ -101,3 +105,16 @@ class Table_Manager(DB_Manager):
         # Construct query statement
         stmt=f'SELECT {column_names} FROM {self.table};'
         return self.exe_query(stmt)
+    
+    def grab_data_advanced(self, time_var, columns=None):
+        if columns is None: # If columns is not specified, select all columns
+                column_names = '*'
+        else: # If columns are specified, join them into a comma-separated string
+            column_names=', '.join(columns)
+
+        # Construct query statement
+        stmt=f'SELECT {column_names} FROM {self.table} '
+        stmt+=f'JOIN collection_method ON {self.table}.method_id=collection_method.method_id '
+        stmt+=f'WHERE collection_method.time = %s' #\'{time_var}\'
+
+        return self.exe_query(stmt, (time_var,))
