@@ -41,6 +41,7 @@ class Data_DF:
         if xax:
             self.xax=xax
         else:
+            print('No X-axis given, dataframe column will be used.')
             self.xax=self.df.columns
 
     def get_subdf(self, select_vals):
@@ -118,6 +119,10 @@ class Data_DF:
             prepro_df.loc[index]=PreproSpectra(row.values).get()
         return prepro_df
 
+class SpecVis(Data_DF):
+    def __init__(self, dataframe, name_dict, xax=None, group_dict=None, color_dict=None, apply_prepro=True):
+        super().__init__(dataframe, name_dict, xax, group_dict, color_dict, apply_prepro)
+    
     def figure_format(self, input_fig):
         fig = go.Figure(input_fig)
         
@@ -192,26 +197,3 @@ class Data_DF:
         return self.figure_format(fig)
 
         fig.show()
-
-if __name__ == '__main__':
-    #Example usage when running the module directly
-    
-    # Create a DataFrame
-    data = {'index': [1, 2, 3, 4, 5],
-            'value': ['a', 'b', 'c', 'd', 'e']}
-    df = pd.DataFrame(data)
-    df.set_index('index', inplace=True, drop=True)
-
-    # Create a selection dictionary
-    selection_dict = {1: 'select', 2: 'not_select', 3: 'select', 4: 'not_select', 5: 'select'}
-
-    # Create an instance of DataFrameSelector
-    selector = Data_DF(dataframe=df, name_dict=selection_dict)
-
-    # Get the sub-DataFrame with selected rows for multiple values
-    selected_rows = selector.get_subdf(['select', 'not_select'])
-    print(selected_rows)# Display the result
-
-    # Get unique values from the name_dict
-    unique_values = selector.get_name_counts(get_counts=False)
-    print("Unique Values:", unique_values)
