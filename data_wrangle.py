@@ -11,7 +11,7 @@ from preprocess import PreproSpectra
 # what happens if there are more groups that colors in color_list?
 
 class Data_DF:
-    def __init__(self, dataframe, name_dict, xax=None, group_dict=None, color_dict=None, apply_prepro=True):
+    def __init__(self, dataframe, name_dict=None, xax=None, group_dict=None, color_dict=None, apply_prepro=True):
         """
         Initialize the DataFrameSelector.
 
@@ -22,6 +22,7 @@ class Data_DF:
             A dictionary where keys are index values, and values are the row names.
    
         """
+        if self.name_dict=None
         self.name_dict = name_dict
 
         self.df=self.preprocess_data(dataframe) if apply_prepro else dataframe
@@ -43,6 +44,17 @@ class Data_DF:
         else:
             print('No X-axis given, dataframe column will be used.')
             self.xax=self.df.columns
+
+    def _make_empty_namedict(self, lst):
+        '''Makes a dictionary from a list where key=value. Useful for developing functions that will mainly expect dictionary-df input pairs where dictionary names df rows based on index.
+        EX:
+        lst = [1,2,3]
+        d={ 1:'1', 2:'2', 3:'3'}
+        '''
+        d={} #initialize dictionary
+        for item in lst:
+            d[item]=str(item)
+        return d
 
     def get_subdf(self, select_vals):
         """
@@ -123,7 +135,7 @@ class SpecVis(Data_DF):
     def __init__(self, dataframe, name_dict, xax=None, group_dict=None, color_dict=None, apply_prepro=True):
         super().__init__(dataframe, name_dict, xax, group_dict, color_dict, apply_prepro)
     
-    def figure_format(self, input_fig):
+    def _figure_format(self, input_fig):
         fig = go.Figure(input_fig)
         
         # Add axis labels
@@ -137,63 +149,65 @@ class SpecVis(Data_DF):
         # Final formatting
         fig.update_layout(template='simple_white', font=dict(family='Arial', size=20), 
                           margin = dict(l=80, r=50, b=80, t=50)) #Set margins for consistency during export
-        fig.show()
+        return fig
 
-    def subplot_fig(self, group_order=None):
+    def _create_subplots(self,group_order):
         # Check for required parameters
         if group_order is None:
             group_order=list(self.group_dict.keys())
 
         # Create Subplots
         fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
-        
-        # Create a subplot for each group
-        i=1
-        for group in group_order:
+
+        # Create a subplot for each group        
+        for i,group in enumerate(group_order):
             if group in self.group_dict:
                 indices=self.group_dict[group]
                 # Make a subdf that contains the rows from the `indices` list
                 sub=self.df.loc[self.df.index.isin(indices)]
                 # Add traces to subplot
                 for index, row in sub.iterrows():
-                    fig.add_trace(go.Scatter(x=self.xax, y=row, name=index, line=dict(color=self.color_dict[group]), showlegend=False), row=i, col=1)
-                i=i+1
+                    fig.add_trace(go.Scatter(x=self.xax, y=row, name=index, line=dict(color=self.color_dict[group]), showlegend=False), row=i+1, col=1)
 
-        # Format final figure
-        return self.figure_format(fig)
+        return self._figure_format(fig)
     
-    def ave_subplot_figure(self, group_order=None, show_std=True):
-        # Check for required parameters
-        if group_order is None:
-            group_order=list(self.group_dict.keys())
 
-        # Create Subplots
-        fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
+    def subplot_fig(self, group_order=None):      
+        return self._create_subplots(group_order)
+    
+    def grouped_subplot(self, main_groups):
+        pass
 
-        # Create subplot for each group with averaged spectra
-        for i, group in enumerate(group_order):
-            if group in self.group_dict:
-                indices=self.group_dict[group]
-                # Get subdf
-                sub=self.df.loc[self.df.index.isin(indices)]
-                # Compute average + standard deviation
-                ave_spec=sub.mean(axis=0)
-                std=sub.std(axis=0)
-                # Add spectra to subplot
-                fig.add_trace(go.Scatter(x=self.xax, y=ave_spec, name=group, line=dict(color=self.color_dict[group]), showlegend=False), row=i+1, col=1)
+    # def ave_subplot_figure(self, group_order=None, show_std=True):
+    #     # Check for required parameters
+    #     if group_order is None:
+    #         group_order=list(self.group_dict.keys())
 
-                if show_std: # Add standard deviation shading
-                    fig.add_trace(go.Scatter(x=self.xax,y=ave_spec+std,
-                                             mode='lines', name='STD Upper Bound',
-                                             line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
-                                             fill='tonexty', showlegend=False),
-                                             row=i+1, col=1)
-                    fig.add_trace(go.Scatter(x=self.xax,y=ave_spec-std,
-                                             mode='lines', name='STD Lower Bound',
-                                             line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
-                                             fill='tonexty', showlegend=False),
-                                             row=i+1, col=1)
-        
-        return self.figure_format(fig)
+    #     # Create Subplots
+    #     fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
 
-        fig.show()
+    #     # Create subplot for each group with averaged spectra
+    #     for i, group in enumerate(group_order):
+    #         if group in self.group_dict:
+    #             indices=self.group_dict[group]
+    #             # Get subdf
+    #             sub=self.df.loc[self.df.index.isin(indices)]
+    #             # Compute average + standard deviation
+    #             ave_spec=sub.mean(axis=0)
+    #             std=sub.std(axis=0)
+    #             # Add spectra to subplot
+    #             fig.add_trace(go.Scatter(x=self.xax, y=ave_spec, name=group, line=dict(color=self.color_dict[group]), showlegend=False), row=i+1, col=1)
+
+    #             if show_std: # Add standard deviation shading
+    #                 fig.add_trace(go.Scatter(x=self.xax,y=ave_spec+std,
+    #                                          mode='lines', name='STD Upper Bound',
+    #                                          line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
+    #                                          fill='tonexty', showlegend=False),
+    #                                          row=i+1, col=1)
+    #                 fig.add_trace(go.Scatter(x=self.xax,y=ave_spec-std,
+    #                                          mode='lines', name='STD Lower Bound',
+    #                                          line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
+    #                                          fill='tonexty', showlegend=False),
+    #                                          row=i+1, col=1)
+    #     return self.figure_format(fig)
+    #     fig.show()
