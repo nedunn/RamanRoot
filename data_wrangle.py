@@ -12,6 +12,7 @@ import plotly.express as px
 from preprocess import PreproSpectra
 
 class PreproSpectra:
+    #FIX add some checks to prevent format errors (array vs series vs list)
     """
     A class for preprocessing a Raman spectra.
 
@@ -327,7 +328,6 @@ class Data_DF:
         """
         self.df=self.preprocess_data(dataframe) if apply_prepro else dataframe
         
-        
         if name_dict:
             self.name_dict=name_dict
         else:
@@ -437,7 +437,6 @@ class Data_DF:
         for index, row in df.iterrows():
             prepro_df.loc[index]=PreproSpectra(row.values).get()
         return prepro_df
-#TODO remove need for preprocess_data from Data_DF
 
 
 class SpecVis(Data_DF):
