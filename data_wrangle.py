@@ -1,15 +1,22 @@
 import pandas as pd
 from typing import Dict, List, Union
 import numpy as np
+import os
+import glob
 
 import pybaselines.spline
 import scipy.signal as ss
 
+from sklearn.decomposition import PCA
+from sklearn import decomposition
+from sklearn.preprocessing import scale
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import LeaveOneOut
+from sklearn.linear_model import LinearRegression
+
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
-
-from preprocess import PreproSpectra
 
 class PreproSpectra:
     #FIX add some checks to prevent format errors (array vs series vs list)
@@ -35,7 +42,7 @@ class PreproSpectra:
     """
     def __init__(self, original_intensity, raman_shifts=None,
                  name=None, alerts=False, no_neg=True,
-                 snv=True,
+                 snv=False,
                  smooth_window=9, smooth_poly=3, zap_window=2, zap_threshold=5,
                  **params):
         
@@ -309,61 +316,121 @@ class PreproSpectra:
     def get(self):
         return np.array(self.Y)
 
+#TODO 's
 #Add annotation
 #Optional subplot titles
 #Add title
 # what happens if there are more groups that colors in color_list?
 
+class DataDir():
+    '''A class to grab data from a directory and compile it into a simple dataframe and dictionary to use with other code.'''
+    def __init__(self, path, name_select=None, nameselect_include_mode=False, name_drop='.'):
+        #TODO edit to include or exclude part of a file name
+        #TODO add preprocess step?
+        self.path=path
+        self.filepathlist=glob.glob(f'{path}/*.csv')
+        
+        if name_select:
+            if nameselect_include_mode:
+                self.filelist=[os.path.basename(file) for file in self.filepathlist if name_select in file]
+            else:
+                self.filelist=[os.path.basename(file) for file in self.filepathlist if name_select not in file]
+        else:
+                self.filelist=[os.path.basename(file) for file in self.filepathlist]
+        
+        self.xs=[]
+        self.ys=[]
+        self.name_drop=name_drop
+        self.short_namedict={}
+        self.long_namedict={}
+
+        self.x=None
+        self.df=None
+        self.grab_data()
+        self.deal_with_x()
+        self.make_dataframe()
+
+    def get(self):
+        return self.df, self.short_namedict, self.long_namedict
+
+    def grab_data(self):
+        for i, file in enumerate(self.filelist):
+            d=pd.read_csv(self.path+file, header=None)
+
+            # X data
+            ax=d.iloc[:,0]
+            self.xs.append(np.array(ax))
+
+            # Grab Y (+ Preprocess?)
+            ay=list(d.iloc[:,1])
+            y=pd.Series(ay, name=i)
+            self.ys.append(y)
+
+            # Naming dictionary
+            self.long_namedict[i]=file.split('.csv')[0]
+            self.short_namedict[i]=file.split(self.name_drop)[0]
+            
+
+        return self
+    
+    def deal_with_x(self): #FIX need to check that xs are compatable 1st
+        # Stack x arrays (makes a 2D array)
+        stack_x=np.stack(self.xs,axis=0)
+
+        # Calculate average (long axis = 0)
+        x=np.mean(stack_x, axis=0)
+        self.x=np.round(x,2) # fix decimal places
+
+        return self
+    
+    def make_dataframe(self):
+        self.df=pd.DataFrame(self.ys)
+        self.df.columns=self.x
+
+    def _display_notice(self,message):
+        print(f'Notice from DataDir: {message}')
+
 class Data_DF:
-    def __init__(self, dataframe, name_dict=None, xax=None, group_dict=None, color_dict=None, apply_prepro=True):
+    def __init__(self, dataframe, name_dict=None, xax=None, group_dict=None, color_dict=None, apply_prepro=False,
+                 display_notice=False, display_examples=False,
+                 ):
+
         """
         Initialize the DataFrameSelector.
+
 
         Parameters:
         - dataframe: pd.DataFrame
             The DataFrame to be processed. Columns are Raman shifts, indexes are identifiers for each spectra, and are keys in the name_dict.
-        - selection_dict: dict
+        - name_dict: dict
             A dictionary where keys are index values, and values are the row names.
    
         """
-        self.df=self.preprocess_data(dataframe) if apply_prepro else dataframe
         
-        if name_dict:
-            self.name_dict=name_dict
-        else:
-            print('Name_dict not given. Default values will be assigned.')
-            self.name_dict=self._make_empty_namedict(self.df.index.to_list())
+        self.df=self._preprocess_data(dataframe) if apply_prepro else dataframe
+        #TODO use params to allow for seeting changes during preprocessing
 
-        if group_dict:
-            self.group_dict=group_dict
-        else:
-            print('No group dictionary provided, creating one based on the name_dict.')
-            self.group_dict=self.make_group_dict()
-        
-        if color_dict:
-            self.color_dict=color_dict
-        else:
-            self.color_dict=self.assign_colors()
-            print('No color dictionary provided, default color values will be used.')
+        self.display_notice=display_notice
+        self.display_examples=display_examples
+
+        self.name_dict=name_dict if name_dict else self._default_namedict(self.df.index.to_list())
+        self.group_dict = group_dict if group_dict else self._default_groupdict(self.name_dict)   
+        self.color_dict=color_dict if color_dict else self._default_assign_colordict(list(set(self.name_dict.values())))
 
         if xax:
             self.xax=xax
         else:
-            print('No X-axis given, dataframe column will be used.')
-            self.xax=self.df.columns
+            self._display_notice('Dataframe column values will be used as Raman Shift values.')
+            self.xax=np.array(self.df.columns)
 
-    def _make_empty_namedict(self, lst):
-        '''Makes a dictionary from a list where key=value. Useful for developing functions that will mainly expect dictionary-df input pairs where dictionary names df rows based on index.
-        EX:
-        lst = [1,2,3]
-        d={ 1:'1', 2:'2', 3:'3'}
-        '''
-        d={} #initialize dictionary
-        for item in lst:
-            d[item]=str(item)
-        return d
 
-    def get_subdf(self, select_vals):
+        self._display_argument_examples('\'idn\' refers to a unique, numerical value assigned to a spectra.\n\tIn this code ***\'idn\' = dataframe index.***')
+        self._display_argument_examples('DataFrames used as inputs should be formated where each ROW = SPECTRA and each COLUMN = RAMAN SHIFT.')
+
+    def get_df(self):
+        return self.df
+
+    def get_subdf(self, select_vals): #TODO select included OR excluded option
         """
         Select rows from the DataFrame where the specified column values match any value in `select_vals`.
         
@@ -407,22 +474,40 @@ class Data_DF:
         else:
             return list(value_counts.keys())
     
-    def make_group_dict(self): #Invert dict function from DataBase/utils.py
-        if self.name_dict is None:
-            print('No name dictionary provided.')
-            return None
-        unique_values=set(self.name_dict.values())
-        group_dict={value: [key for key, val in self.name_dict.items() if val == value] for value in unique_values}
-        self.group_dict=group_dict
+    def _default_groupdict(self, dic): #Invert dict function from DataBase/utils.py
+        unique_values=set(dic.values())
+        group_dict={value: [key for key, val in dic.items() if val == value] for value in unique_values}
+        # self.group_dict=group_dict
+        self._display_notice('Group_dict not provided. Name_dict values will be used to form groups.')
+        self._display_argument_examples('group_dict = {\'Group Name / Identifier\':\'[idns]\'}\n\tDefault made by clustering samples that have the same name_dict value')
         return group_dict
+    
+    def _default_namedict(self, lst):
+        '''Makes a dictionary from a list where key=value. Useful for developing functions that will mainly expect dictionary-df input pairs where dictionary names df rows based on index.
+        EX:
+        lst = [1,2,3]
+        d={ 1:'1', 2:'2', 3:'3'}
+        '''
+        d={} #initialize dictionary
+        for item in lst:
+            d[item]=str(item)
+        self._display_notice('Name_dict not given. Default values will be assigned.')
+        self._display_argument_examples('name_dict={idn:\'name / label / sample\'}')
+        return d
+    
+    def _default_assign_colordict(self, lst):
+        dic={}
+        for i, key in enumerate(lst):
+            if i< 11:
+                dic[key]=px.colors.qualitative.Vivid[i]
+            else:
+                dic[key]=px.colors.qualitative.Alphabet[i]
+            
+        self._display_notice('No color dictionary provided, default color values will be used.')
+        self._display_argument_examples('color_dict = {\'name\':\'color\'}\n\t\'name\' = name_dict key')
+        return dic
 
-    def assign_colors(self):
-        color_list=px.colors.qualitative.Vivid[:len(self.group_dict)] # get a list of colors
-        color_dict={key:color_list[i] for i, key in enumerate(self.group_dict.keys())}
-        self.color_dict=color_dict
-        return color_dict
-
-    def preprocess_data(self, df):
+    def _preprocess_data(self, df):
         """
         Apply 'PreproSpectra(row_as_array).get()' for each row of the DataFrame.
 
@@ -436,27 +521,103 @@ class Data_DF:
         # Apply Preprocessing
         for index, row in df.iterrows():
             prepro_df.loc[index]=PreproSpectra(row.values).get()
+        
+        # self._display_notice('Preprocessing has been applied to the data.')
+
         return prepro_df
-
-
-class SpecVis(Data_DF):
-    def __init__(self, dataframe, name_dict, xax=None, group_dict=None, color_dict=None, apply_prepro=True):
-        super().__init__(dataframe, name_dict, xax, group_dict, color_dict, apply_prepro)
     
-    def _figure_format(self, input_fig):
+    def _display_notice(self,message):
+        if self.display_notice:
+        # Display a message to the user
+            print(f'Notice: {message}')
+        else:
+            return None
+
+    def _display_argument_examples(self,message):
+        if self.display_examples:
+            print(f'{message}')
+        else:
+            pass
+
+class Multivar(Data_DF): #TODO merge from df_analysis
+    '''Input dataframe is expected to have Raman shift as columns and rows are samples.
+    The index values for each row should be the sampleID.
+    Dictionaries can be used to set the labels for hovertext, color, and symbol.''' 
+    def __init__(self, dataframe, name_dict=None, xax=None, group_dict=None, color_dict=None, apply_prepro=False, 
+                 display_notice=False, display_examples=False):
+        super().__init__(dataframe, name_dict, xax, group_dict, color_dict, apply_prepro, display_notice, display_examples)
+
+    def _label_gen(self,prefix,n):
+        nums=list(range(1,n+1))
+        res=['%s %s'%(prefix, num) for num in nums]
+        return res
+
+    def pca_run(self, ncomp=10):
+        pca=decomposition.PCA(n_components=ncomp)
+        
+        # Apply PCA
+        X=scale(self.df.T) # Rotate DF so that each column is a different sample and RS are indexs
+        X=pca.fit_transform(X)
+        
+        # Get components
+        pc_labels=self._label_gen('PC',ncomp)
+        pcs=pca.components_.T*np.sqrt(pca.explained_variance_)
+        pcs=pd.DataFrame(pcs, columns=pc_labels, index=self.df.index.to_list())
+
+        # Get explained variance
+        explained_list=[round(x*100,2) for x in pca.explained_variance_ratio_]
+        explained={pc_labels[i]:explained_list[i] for i in range(ncomp)}
+
+        # Get loadings
+        loadings=pd.DataFrame(X,columns=pc_labels,index=self.xax)
+
+        # Store the PCA results as an attribute
+        self.pca=(pcs, loadings, explained, ncomp)
+
+        # Return self to allow chaining methods
+        return self
+
+class SpecVis(Data_DF): #TODO check if the change of xax in Data_df (frome columns to np.array impacts functionality of the child class)
+    #TODO streamline with Data_DF
+    def __init__(self, dataframe, name_dict, xax=None, group_dict=None, color_dict=None,
+                 apply_prepro=False,
+                 display_notice=False, display_examples=False):
+        super().__init__(dataframe, name_dict, xax, group_dict, color_dict, apply_prepro,display_notice=display_examples)
+
+        self.vertical_spacing=0.05
+
+    def _figure_format(self, input_fig, n_plots):
         fig = go.Figure(input_fig)
         
         # Add axis labels
         fig.add_annotation(text='Intensity',
-                           x=-0.1,y=0.5, xref='paper',yref='paper',
+                           x=-0.17,y=0.5, xref='paper',yref='paper',
                            showarrow=False,font=dict(size=20, family='Arial'), textangle=-90)
         fig.add_annotation(text='Raman Shift (cm<sup>-1</sup>)',
                            x=0.5,y=-0.1, xref='paper',yref='paper',
                            showarrow=False,font=dict(size=20, family='Arial'))
         
+        # Dimensions
+        height=80*n_plots
+        width=1000
+        inital_margin = dict(l=110, r=70, b=70, t=20)
+
+        # Calculate proportional dimensions
+        width_ratio=width/800
+        height_ratio=height/600
+        adjusted_row_spacing=0#self.vertical_spacing * height_ratio # Adjusted for vertical spacing
+        # adjusted_row_spacing=(self.vertical_spacing * (n_plots+2))
+        margin=dict(l=inital_margin['l']*width_ratio,r=inital_margin['r']*width_ratio,
+                    t=inital_margin['t']*height_ratio+adjusted_row_spacing,b=inital_margin['b']*height_ratio+adjusted_row_spacing)
+
         # Final formatting
-        fig.update_layout(template='simple_white', font=dict(family='Arial', size=20), 
-                          margin = dict(l=80, r=70, b=100, t=50)) #Set margins for consistency during export
+        fig.update_layout(template='simple_white', font=dict(family='Arial', size=20),
+                          height=height, width=width,
+                          margin = margin
+                          ) #Set margins for consistency during export
+        
+
+        # return self.adjust_figure_size_with_spacing(1000,380*n_plots)
         return fig
 
     def _create_subplots(self,group_order):
@@ -465,7 +626,9 @@ class SpecVis(Data_DF):
             group_order=list(self.group_dict.keys())
 
         # Create Subplots
-        fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
+        fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order,
+                          vertical_spacing=self.vertical_spacing
+                          )
 
         # Create a subplot for each group        
         for i,group in enumerate(group_order):
@@ -477,7 +640,7 @@ class SpecVis(Data_DF):
                 for index, row in sub.iterrows():
                     fig.add_trace(go.Scatter(x=self.xax, y=row, name=index, line=dict(color=self.color_dict[group]), showlegend=False), row=i+1, col=1)
 
-        return self._figure_format(fig)
+        return self._figure_format(fig,len(group_order))
 
     def subplot_fig(self, group_order=None, **params):      
         return self._create_subplots(group_order, **params)
@@ -485,36 +648,36 @@ class SpecVis(Data_DF):
     def grouped_subplot(self, main_groups):
         pass
 
-    # def ave_subplot_figure(self, group_order=None, show_std=True):
-    #     # Check for required parameters
-    #     if group_order is None:
-    #         group_order=list(self.group_dict.keys())
+    def ave_subplot_figure(self, group_order=None, show_std=False):
+        # Check for required parameters
+        if group_order is None:
+            group_order=list(self.group_dict.keys())
 
-    #     # Create Subplots
-    #     fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
+        # Create Subplots
+        fig=make_subplots(rows=len(group_order), cols=1, shared_xaxes=True, subplot_titles=group_order)
 
-    #     # Create subplot for each group with averaged spectra
-    #     for i, group in enumerate(group_order):
-    #         if group in self.group_dict:
-    #             indices=self.group_dict[group]
-    #             # Get subdf
-    #             sub=self.df.loc[self.df.index.isin(indices)]
-    #             # Compute average + standard deviation
-    #             ave_spec=sub.mean(axis=0)
-    #             std=sub.std(axis=0)
-    #             # Add spectra to subplot
-    #             fig.add_trace(go.Scatter(x=self.xax, y=ave_spec, name=group, line=dict(color=self.color_dict[group]), showlegend=False), row=i+1, col=1)
+        # Create subplot for each group with averaged spectra
+        for i, group in enumerate(group_order):
+            if group in self.group_dict:
+                indices=self.group_dict[group]
+                # Get subdf
+                sub=self.df.loc[self.df.index.isin(indices)]
+                # Compute average + standard deviation
+                ave_spec=sub.mean(axis=0)
+                std=sub.std(axis=0)
+                # Add spectra to subplot
+                fig.add_trace(go.Scatter(x=self.xax, y=ave_spec, name=group, line=dict(color=self.color_dict[group]), showlegend=False), row=i+1, col=1)
 
-    #             if show_std: # Add standard deviation shading
-    #                 fig.add_trace(go.Scatter(x=self.xax,y=ave_spec+std,
-    #                                          mode='lines', name='STD Upper Bound',
-    #                                          line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
-    #                                          fill='tonexty', showlegend=False),
-    #                                          row=i+1, col=1)
-    #                 fig.add_trace(go.Scatter(x=self.xax,y=ave_spec-std,
-    #                                          mode='lines', name='STD Lower Bound',
-    #                                          line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
-    #                                          fill='tonexty', showlegend=False),
-    #                                          row=i+1, col=1)
-    #     return self.figure_format(fig)
-    #     fig.show()
+                if show_std: # Add standard deviation shading
+                    fig.add_trace(go.Scatter(x=self.xax,y=ave_spec+std,
+                                             mode='lines', name='STD Upper Bound',
+                                             line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
+                                             fill='tonexty', showlegend=False),
+                                             row=i+1, col=1)
+                    fig.add_trace(go.Scatter(x=self.xax,y=ave_spec-std,
+                                             mode='lines', name='STD Lower Bound',
+                                             line=dict(width=0), fillcolor='rgba(0,100,80,0.2)',
+                                             fill='tonexty', showlegend=False),
+                                             row=i+1, col=1)
+        return self._figure_format(fig,len(group_order))
+    
