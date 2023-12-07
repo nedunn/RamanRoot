@@ -393,7 +393,7 @@ class DataDir():
 class Data_DF:
     def __init__(self, dataframe, name_dict=None, xax=None, group_dict=None, color_dict=None, apply_prepro=False,
                  display_notice=False, display_examples=False,
-                 ):
+                 prepro_params_dict=None):
 
         """
         Initialize the DataFrameSelector.
@@ -407,6 +407,7 @@ class Data_DF:
    
         """
         
+        self.prepro_params=prepro_params_dict
         self.df=self._preprocess_data(dataframe) if apply_prepro else dataframe
         #TODO use params to allow for seeting changes during preprocessing
 
@@ -520,7 +521,7 @@ class Data_DF:
 
         # Apply Preprocessing
         for index, row in df.iterrows():
-            prepro_df.loc[index]=PreproSpectra(row.values).get()
+            prepro_df.loc[index]=PreproSpectra(row.values, self.prepro_params).get()
         
         # self._display_notice('Preprocessing has been applied to the data.')
 
