@@ -1,11 +1,8 @@
 import psycopg2
-import pandas as pd
-import pw
 
 class DB_Manager:
     def __init__(self, password, dbname, user='postgres', host='localhost', port='5432'):
-
-        #Establish a connection to a PostgreSQL database and create a cursor object     
+        
         self.db_params={
             'host':host,
             'port':port,
@@ -13,16 +10,17 @@ class DB_Manager:
             'user':user,
             'password':password
         }
-        self._connect()
 
-        self.tables=self._table_list()
+        self.conn=None
+        self.cur=None
 
+        self.connect()
 
-    def _connect(self):
+    def connect(self):
         self.conn = psycopg2.connect(**self.db_params)
         self.cur = self.conn.cursor()
     
-    def close(self):
+    def disconnect(self):
         if self.cur:
             self.cur.close()
         if self.conn:
@@ -38,13 +36,11 @@ class DB_Manager:
             print(f'Error at query execution: {e}')
             return []
 
-    def _table_list(self): # this is an example of an API (but it is missing a route)
+    def table_list(self):
         stmt = 'SELECT table_name FROM information_schema.tables WHERE table_schema=\'public\' ORDER BY table_name;'
-        
-        # ALT: self.cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
         return [table[0] for table in self.exe_query(stmt)]
     
-    def table_info(self, table_name):
+    def table_stats(self, table_name):
         columns_query = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s;"
         columns = [column[0] for column in self.exe_query(columns_query, (table_name,))]
 
@@ -52,20 +48,18 @@ class DB_Manager:
         num_rows = self.exe_query(rows_query)[0][0]
 
         stats = {'columns': columns, 'num_rows': num_rows, 'column_stats': {}}
-        #self.cursor.execute(f"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = '{table_name}'")
+
+    def table_dets(self, table):
+        pass
 
 class Table_Manager(DB_Manager):
     def __init__(self, table_name, password, dbname, 
                  user='postgres', host='localhost', port='5432',
-                 condition=None,
-                 collection_method_table=None, method_key='method_id'):
+                 condition=None):
         super().__init__(password, dbname, user, host, port)
-        
         self.table=table_name
-        self.condition=condition
-        self.collection_table=collection_method_table
-        self.key=method_key
 
+        self.condition=condition
 
     def col_list(self):
         stmt = f"SELECT column_name FROM information_schema.columns WHERE table_name = %s;"
@@ -112,7 +106,7 @@ class Table_Manager(DB_Manager):
         stmt=f'SELECT {column_names} FROM {self.table};'
         return self.exe_query(stmt)
     
-    def grab_data_advanced(self, time_var, where_stmt=None, columns=None):
+    def grab_data_advanced(self, time_var, columns=None):
         if columns is None: # If columns is not specified, select all columns
                 column_names = '*'
         else: # If columns are specified, join them into a comma-separated string
@@ -122,26 +116,5 @@ class Table_Manager(DB_Manager):
         stmt=f'SELECT {column_names} FROM {self.table} '
         stmt+=f'JOIN collection_method ON {self.table}.method_id=collection_method.method_id '
         stmt+=f'WHERE collection_method.time = %s' #\'{time_var}\'
-        print(stmt)
 
-        return self.exe_query(stmt, (time_var,))
-    def grab_data_advanced(self, time_var, where_dict=None, columns=None):
-        if not self.collection_table:
-            print('Collection method table needs to be set.')
-            return tuple()
-        
-        if columns is None: # If columns is not specified, select all columns
-            column_names = '*'
-        else: # If columns are specified, join them into a comma-separated string
-            columns=[f'{self.table}.{col}' for col in columns] # add table to column names
-            column_names=', '.join(columns)
-
-        # Construct query statement
-        stmt=f'SELECT {column_names} FROM {self.table} '
-        stmt+=f'JOIN {self.collection_table} ON {self.table}.{self.key} = {self.collection_table}.{self.key} '
-        stmt+=f'WHERE {self.collection_table}.time = %s' #\'{time_var}\' #TODO add functionality  
-        if where_dict:
-            for key,val in where_dict.items():
-                stmt+=f' AND {self.table}.{key} {val}'
-        
         return self.exe_query(stmt, (time_var,))
